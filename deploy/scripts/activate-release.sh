@@ -13,14 +13,32 @@ release_dir="${releases_dir}/${release_sha}"
 archive_path="${releases_dir}/${release_sha}.tar.gz"
 shared_dir="${app_root}/shared"
 
+read_env_value() {
+	local key="$1"
+	local file="$2"
+	local line
+	local value
+
+	line="$(grep -E "^${key}=" "$file" || true)"
+	if [ -z "$line" ]; then
+		return 1
+	fi
+
+	value="${line#*=}"
+	value="${value%$'\r'}"
+	if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+		value="${value:1:-1}"
+	elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+		value="${value:1:-1}"
+	fi
+
+	printf '%s' "$value"
+}
+
 if [ ! -f "${shared_dir}/.env" ]; then
   printf 'missing %s\n' "${shared_dir}/.env" >&2
   exit 1
 fi
-
-set -a
-. "${shared_dir}/.env"
-set +a
 
 if [ ! -f "${archive_path}" ]; then
   printf 'missing %s\n' "${archive_path}" >&2
@@ -39,8 +57,14 @@ ln -sfn "${release_dir}" "${app_root}/current"
 
 sudo systemctl restart obsidian-tg-notify-postgres.service
 
-postgres_host="${POSTGRES_HOST:-127.0.0.1}"
-postgres_port="${POSTGRES_PORT:-5432}"
+postgres_host="$(read_env_value POSTGRES_HOST "${shared_dir}/.env" || true)"
+postgres_port="$(read_env_value POSTGRES_PORT "${shared_dir}/.env" || true)"
+if [ -z "${postgres_host}" ]; then
+	postgres_host="127.0.0.1"
+fi
+if [ -z "${postgres_port}" ]; then
+	postgres_port="5432"
+fi
 postgres_ready=false
 for _ in $(seq 1 60); do
 	if bash -c "</dev/tcp/${postgres_host}/${postgres_port}" >/dev/null 2>&1; then
