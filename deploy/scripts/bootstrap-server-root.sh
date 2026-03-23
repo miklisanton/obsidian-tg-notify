@@ -8,9 +8,12 @@ if ! id "${app_user}" >/dev/null 2>&1; then
   useradd --create-home --shell /bin/bash "${app_user}"
 fi
 
-loginctl enable-linger "${app_user}"
-install -d -o "${app_user}" -g "${app_user}" -m 0755 "${app_home}/apps/obsidian-tg-notify/releases"
-install -d -o "${app_user}" -g "${app_user}" -m 0755 "${app_home}/apps/obsidian-tg-notify/shared"
-install -d -o "${app_user}" -g "${app_user}" -m 0755 "${app_home}/.config/systemd/user"
+if getent group docker >/dev/null 2>&1; then
+  usermod -aG docker "${app_user}"
+fi
+
+install -d -o "${app_user}" -g "${app_user}" -m 0755 "${app_home}/apps"
+install -d -o "${app_user}" -g "${app_user}" -m 0755 "${app_home}/apps/obsidian-tg-notify"
+install -d -o "${app_user}" -g "${app_user}" -m 0700 "${app_home}/apps/obsidian-tg-notify/shared"
 
 printf 'root bootstrap done for %s\n' "${app_user}"

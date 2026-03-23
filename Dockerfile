@@ -9,7 +9,8 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY migrations ./migrations
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/obsidian-notify ./cmd/app
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/obsidian-notify ./cmd/app \
+    && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/seed-default-rules ./cmd/seed-default-rules
 
 FROM debian:bookworm-slim
 
@@ -23,6 +24,7 @@ RUN groupadd --system --gid 10001 app \
 WORKDIR /app
 
 COPY --from=build --chown=app:app /out/obsidian-notify /app/obsidian-notify
+COPY --from=build --chown=app:app /out/seed-default-rules /app/seed-default-rules
 COPY --chown=app:app migrations /app/migrations
 
 ENV APP_CONFIG=/app/config.yaml

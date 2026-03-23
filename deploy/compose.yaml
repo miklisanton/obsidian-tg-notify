@@ -1,0 +1,29 @@
+services:
+  app:
+    image: ${APP_IMAGE:?APP_IMAGE is required}
+    restart: unless-stopped
+    env_file:
+      - ./shared/.env
+    environment:
+      APP_CONFIG: /app/config.yaml
+      APP_ENV_FILE: /app/.env
+    volumes:
+      - ./shared/config.yaml:/app/config.yaml:ro
+      - ./shared/.env:/app/.env:ro
+      - ${PERSONAL_VAULT_HOST_PATH}:${PERSONAL_VAULT_PATH}:ro
+
+  seed-default-rules:
+    image: ${APP_IMAGE:?APP_IMAGE is required}
+    profiles:
+      - seed
+    env_file:
+      - ./shared/.env
+    entrypoint:
+      - /app/seed-default-rules
+    environment:
+      APP_CONFIG: /app/config.yaml
+      APP_ENV_FILE: /app/.env
+    volumes:
+      - ./shared/config.yaml:/app/config.yaml:ro
+      - ./shared/.env:/app/.env:ro
+      - ${PERSONAL_VAULT_HOST_PATH}:${PERSONAL_VAULT_PATH}:ro
