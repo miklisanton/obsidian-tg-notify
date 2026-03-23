@@ -1,0 +1,25 @@
+app:
+  timezone: "${APP_TIMEZONE}"
+  default_vault_id: ${APP_DEFAULT_VAULT_ID}
+  debounce_window: "${APP_DEBOUNCE_WINDOW}"
+  task_match_threshold: ${APP_TASK_MATCH_THRESHOLD}
+  daily_notes_dir: "${APP_DAILY_NOTES_DIR}"
+  weekly_goals_dir: "${APP_WEEKLY_GOALS_DIR}"
+
+postgres:
+  host: "${POSTGRES_HOST}"
+  port: ${POSTGRES_PORT}
+  name: "${POSTGRES_DB}"
+  user: "${POSTGRES_USER}"
+  password: "${POSTGRES_PASSWORD}"
+  sslmode: "${POSTGRES_SSLMODE}"
+
+telegram:
+  token: "${TELEGRAM_BOT_TOKEN}"
+  allowed_chat_ids:
+    - ${TELEGRAM_ALLOWED_CHAT_ID}
+
+vaults:
+  - id: 1
+    name: "personal"
+    root_path: "${PERSONAL_VAULT_PATH}"

@@ -1,0 +1,70 @@
+name: deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build release
+        run: |
+          set -euo pipefail
+          release_dir="dist/release"
+          mkdir -p "$release_dir"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$release_dir/obsidian-notify" ./cmd/app
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$release_dir/seed-default-rules" ./cmd/seed-default-rules
+          cp -R migrations "$release_dir/migrations"
+          cp config.example.yaml "$release_dir/config.example.yaml"
+          tar -C dist -czf dist/obsidian-notify-${GITHUB_SHA}.tar.gz release
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Trust server host key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload release
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          set -euo pipefail
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" 'mkdir -p ~/apps/obsidian-tg-notify/releases'
+          scp -P "$SSH_PORT" dist/obsidian-notify-${GITHUB_SHA}.tar.gz "$SSH_USER@$SSH_HOST:~/apps/obsidian-tg-notify/releases/${GITHUB_SHA}.tar.gz"
+
+      - name: Activate release
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "bash -s" -- "$GITHUB_SHA" < deploy/scripts/activate-release.sh

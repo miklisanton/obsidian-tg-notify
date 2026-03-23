@@ -1,0 +1,9 @@
+.DS_Store
+.env
+config.yaml
+
+.idea/
+
+bin/
+
+coverage.out
