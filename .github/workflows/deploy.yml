@@ -12,6 +12,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   deploy:
@@ -29,15 +30,33 @@ jobs:
       - name: Run tests
         run: go test ./...
 
-      - name: Build release
+      - name: Compute image ref
+        id: image
         run: |
           set -euo pipefail
-          release_dir="dist/release"
-          mkdir -p "$release_dir"
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$release_dir/obsidian-notify" ./cmd/app
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$release_dir/seed-default-rules" ./cmd/seed-default-rules
-          cp -R migrations "$release_dir/migrations"
-          tar -C dist -czf dist/obsidian-notify-${GITHUB_SHA}.tar.gz release
+          image_repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          printf 'repo=%s\n' "$image_repo" >> "$GITHUB_OUTPUT"
+          printf 'sha_tag=%s:%s\n' "$image_repo" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.sha_tag }}
+            ${{ steps.image.outputs.repo }}:latest
 
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
@@ -50,21 +69,28 @@ jobs:
           printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Upload release
+      - name: Upload compose file
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
           SSH_USER: ${{ secrets.SSH_USER }}
         run: |
           set -euo pipefail
-          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" 'mkdir -p ~/apps/obsidian-tg-notify/releases'
-          scp -P "$SSH_PORT" dist/obsidian-notify-${GITHUB_SHA}.tar.gz "$SSH_USER@$SSH_HOST:~/apps/obsidian-tg-notify/releases/${GITHUB_SHA}.tar.gz"
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" 'mkdir -p ~/apps/obsidian-tg-notify'
+          scp -P "$SSH_PORT" deploy/compose.yaml "$SSH_USER@$SSH_HOST:~/apps/obsidian-tg-notify/compose.yaml"
 
-      - name: Activate release
+      - name: Deploy compose
         env:
-          RELEASE_SHA: ${{ github.sha }}
+          APP_IMAGE: ${{ steps.image.outputs.sha_tag }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
           SSH_USER: ${{ secrets.SSH_USER }}
         run: |
-          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "RELEASE_SHA='$RELEASE_SHA' bash -s" < deploy/scripts/activate-release.sh
+          {
+            printf 'export APP_IMAGE=%q\n' "$APP_IMAGE"
+            printf 'export GHCR_USERNAME=%q\n' "$GHCR_USERNAME"
+            printf 'export GHCR_TOKEN=%q\n' "$GHCR_TOKEN"
+            cat deploy/scripts/deploy-compose.sh
+          } | ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" 'bash -s'
