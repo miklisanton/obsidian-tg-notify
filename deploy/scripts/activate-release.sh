@@ -96,6 +96,9 @@ if [ "${postgres_ready}" != "true" ]; then
 	exit 1
 fi
 
-APP_CONFIG="${shared_dir}/config.yaml" APP_ENV_FILE="${shared_dir}/.env" "${app_root}/current/seed-default-rules"
+(
+	cd "${app_root}/current"
+	APP_CONFIG="${shared_dir}/config.yaml" APP_ENV_FILE="${shared_dir}/.env" ./seed-default-rules
+)
 sudo -n systemctl restart obsidian-tg-notify.service
 sudo -n systemctl is-active obsidian-tg-notify.service
