@@ -1,0 +1,17 @@
+[Unit]
+Description=Obsidian Telegram Notify
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__APP_USER__
+WorkingDirectory=__APP_HOME__/apps/obsidian-tg-notify/current
+Environment=APP_CONFIG=__APP_HOME__/apps/obsidian-tg-notify/shared/config.yaml
+Environment=APP_ENV_FILE=__APP_HOME__/apps/obsidian-tg-notify/shared/.env
+ExecStart=__APP_HOME__/apps/obsidian-tg-notify/current/obsidian-notify
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

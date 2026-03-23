@@ -4,7 +4,9 @@ set -euo pipefail
 app_root="${HOME}/apps/obsidian-tg-notify"
 shared_dir="${app_root}/shared"
 
-mkdir -p "${shared_dir}"
+mkdir -p "${shared_dir}" "${app_root}/releases"
+
+chmod 700 "${shared_dir}"
 
 if [ ! -f "${shared_dir}/config.yaml" ]; then
   cp config.example.yaml "${shared_dir}/config.yaml"
@@ -17,5 +19,4 @@ if [ ! -f "${shared_dir}/.env" ]; then
   printf 'created empty %s\n' "${shared_dir}/.env"
 fi
 
-install -m 0644 deploy/compose.yaml "${app_root}/compose.yaml"
 printf 'user bootstrap done\n'

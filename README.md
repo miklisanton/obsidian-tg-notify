@@ -2,7 +2,7 @@
 
 ## CI/CD and non-root deploy
 
-This repo now supports a Dockerised GitHub Actions deploy flow. CI builds and tests the app, CD pushes an image to GHCR, then the server pulls that image and runs it with Docker Compose as a non-root user.
+This repo now supports a Go binary GitHub Actions deploy flow. CI tests and builds the binaries, CD uploads a Linux release tarball over SSH, then the server activates it behind a system-wide `systemd` service that runs as a non-root user. Postgres runs in a local Docker container managed by its own systemd unit.
 
 ### 1. One-time server bootstrap
 
@@ -12,7 +12,7 @@ Run once as root on the server:
 ./deploy/scripts/bootstrap-server-root.sh obsidian
 ```
 
-This creates the `obsidian` user if missing, adds it to the `docker` group if present, and prepares app dirs.
+This creates the `obsidian` user if missing, prepares app dirs, installs the app and Postgres systemd units, and grants limited `sudo systemctl` access for deploy restarts.
 
 Then switch to that user and run once from a checked out copy of this repo:
 
@@ -20,17 +20,18 @@ Then switch to that user and run once from a checked out copy of this repo:
 ./deploy/scripts/bootstrap-server-user.sh
 ```
 
-That installs the Compose file and creates:
+That creates:
 
 - `~/apps/obsidian-tg-notify/shared/config.yaml`
 - `~/apps/obsidian-tg-notify/shared/.env`
-- `~/apps/obsidian-tg-notify/compose.yaml`
+- `~/apps/obsidian-tg-notify/releases/`
+- `~/apps/obsidian-tg-notify/postgres-compose.yaml`
 
 Edit those before first deploy.
 
 ### 2. Server config
 
-`shared/config.yaml` should point at your real vault path and Postgres host.
+`shared/config.yaml` should point at your real vault path and local Postgres host.
 
 `shared/.env` should contain values for:
 
@@ -43,10 +44,10 @@ Edit those before first deploy.
 - `POSTGRES_SSLMODE`
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_ALLOWED_CHAT_ID`
-- `PERSONAL_VAULT_HOST_PATH`
 - `PERSONAL_VAULT_PATH`
 
 Make sure the `obsidian` user can read the vault path.
+If you use the bundled Postgres container, set `POSTGRES_HOST=127.0.0.1`.
 
 ### 3. GitHub Actions secrets
 
@@ -57,11 +58,8 @@ Add these repository secrets:
 - `SSH_USER`
 - `SSH_PRIVATE_KEY`
 - `SSH_KNOWN_HOSTS`
-- `GHCR_USERNAME`
-- `GHCR_TOKEN`
 
 `SSH_USER` should be the non-root deploy user, eg `obsidian`.
-`GHCR_TOKEN` should be a token that can read packages from `ghcr.io`.
 
 You can build `SSH_KNOWN_HOSTS` with:
 
@@ -71,8 +69,8 @@ ssh-keyscan -p 22 your-server-host
 
 ### 4. Pipelines
 
-- `.github/workflows/ci.yml` runs tests and a Docker build on push/PR.
-- `.github/workflows/deploy.yml` tests, builds a Docker image, pushes it to GHCR, uploads `compose.yaml`, pulls the image on the server, runs `seed-default-rules`, and starts the app with Docker Compose.
+- `.github/workflows/ci.yml` runs tests and builds both Go binaries on push/PR.
+- `.github/workflows/deploy.yml` tests, builds a Linux release tarball, uploads it over SSH, makes sure the Postgres container is up, runs `seed-default-rules`, and restarts the systemd service.
 
 Deploy runs on pushes to `main` and on manual dispatch.
 
@@ -80,17 +78,19 @@ Deploy runs on pushes to `main` and on manual dispatch.
 
 The deploy job manages:
 
-- `~/apps/obsidian-tg-notify/compose.yaml`
+- `~/apps/obsidian-tg-notify/releases/<git-sha>`
+- `~/apps/obsidian-tg-notify/current`
+- `~/apps/obsidian-tg-notify/postgres-compose.yaml`
 - `~/apps/obsidian-tg-notify/shared/config.yaml`
 - `~/apps/obsidian-tg-notify/shared/.env`
 
 ### 6. Runtime notes
 
 - App migrations still run on startup.
-- Deploy also runs `seed-default-rules` inside the image before app restart.
+- Deploy also runs `seed-default-rules` before service restart.
 - `.env` is now optional; process env alone also works.
-- Docker image runs as a non-root user.
-- Server user needs Docker and Docker Compose access.
+- `systemd` is system-wide, but app process runs as the non-root deploy user.
+- Postgres is provided by `obsidian-tg-notify-postgres.service`, which runs a Docker `postgres:17` container bound to `127.0.0.1:${POSTGRES_PORT}`.
 
 ### 7. First deploy checklist
 
@@ -100,5 +100,4 @@ The deploy job manages:
 4. Fill `shared/.env`.
 5. Ensure vault path permissions.
 6. Add GitHub secrets.
-7. Re-login if `docker` group membership was just added.
-8. Push to `main`.
+7. Push to `main`.
