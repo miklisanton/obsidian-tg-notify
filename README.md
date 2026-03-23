@@ -101,3 +101,9 @@ The deploy job manages:
 5. Ensure vault path permissions.
 6. Add GitHub secrets.
 7. Push to `main`.
+
+If deploy fails on `sudo systemctl`, rerun root bootstrap after pulling latest repo so `/etc/sudoers.d/obsidian-tg-notify` and both systemd units are refreshed:
+
+```bash
+sudo ./deploy/scripts/bootstrap-server-root.sh <deploy-user>
+```

@@ -12,6 +12,7 @@ releases_dir="${app_root}/releases"
 release_dir="${releases_dir}/${release_sha}"
 archive_path="${releases_dir}/${release_sha}.tar.gz"
 shared_dir="${app_root}/shared"
+postgres_compose_file="${app_root}/postgres-compose.yaml"
 
 read_env_value() {
 	local key="$1"
@@ -55,7 +56,7 @@ mkdir -p "${release_dir}"
 tar -xzf "${archive_path}" -C "${release_dir}" --strip-components=1
 ln -sfn "${release_dir}" "${app_root}/current"
 
-sudo systemctl restart obsidian-tg-notify-postgres.service
+sudo -n systemctl restart obsidian-tg-notify-postgres.service
 
 postgres_host="$(read_env_value POSTGRES_HOST "${shared_dir}/.env" || true)"
 postgres_port="$(read_env_value POSTGRES_PORT "${shared_dir}/.env" || true)"
@@ -66,8 +67,17 @@ if [ -z "${postgres_port}" ]; then
 	postgres_port="5432"
 fi
 postgres_ready=false
+postgres_container_id=""
+postgres_health_status=""
 for _ in $(seq 1 60); do
-	if bash -c "</dev/tcp/${postgres_host}/${postgres_port}" >/dev/null 2>&1; then
+	postgres_container_id="$(sudo -n docker compose -f "${postgres_compose_file}" --env-file "${shared_dir}/.env" ps -q postgres 2>/dev/null || true)"
+	if [ -n "${postgres_container_id}" ]; then
+		postgres_health_status="$(sudo -n docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${postgres_container_id}" 2>/dev/null || true)"
+	else
+		postgres_health_status=""
+	fi
+
+	if [ "${postgres_health_status}" = "healthy" ]; then
 		postgres_ready=true
 		break
 	fi
@@ -75,10 +85,10 @@ for _ in $(seq 1 60); do
 done
 
 if [ "${postgres_ready}" != "true" ]; then
-	printf 'postgres not ready on %s:%s\n' "${postgres_host}" "${postgres_port}" >&2
+	printf 'postgres not healthy on %s:%s status=%s\n' "${postgres_host}" "${postgres_port}" "${postgres_health_status:-unknown}" >&2
 	exit 1
 fi
 
 APP_CONFIG="${shared_dir}/config.yaml" APP_ENV_FILE="${shared_dir}/.env" "${app_root}/current/seed-default-rules"
-sudo systemctl restart obsidian-tg-notify.service
-sudo systemctl is-active obsidian-tg-notify.service
+sudo -n systemctl restart obsidian-tg-notify.service
+sudo -n systemctl is-active obsidian-tg-notify.service
