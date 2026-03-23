@@ -81,6 +81,13 @@ for _ in $(seq 1 60); do
 		postgres_ready=true
 		break
 	fi
+
+	if [ -z "${postgres_health_status}" ] || [ "${postgres_health_status}" = "unknown" ]; then
+		if bash -c "</dev/tcp/${postgres_host}/${postgres_port}" >/dev/null 2>&1; then
+			postgres_ready=true
+			break
+		fi
+	fi
 	sleep 1
 done
 

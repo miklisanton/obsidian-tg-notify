@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
@@ -14,14 +15,32 @@ type DB struct {
 }
 
 func Open(ctx context.Context, dsn string) (*DB, error) {
-	sqlxDB, err := sqlx.ConnectContext(ctx, "pgx", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("connect db: %w", err)
+	var lastErr error
+	for attempt := 1; attempt <= 30; attempt++ {
+		sqlxDB, err := sqlx.ConnectContext(ctx, "pgx", dsn)
+		if err == nil {
+			if pingErr := sqlxDB.PingContext(ctx); pingErr == nil {
+				return &DB{DB: sqlxDB}, nil
+			} else {
+				lastErr = fmt.Errorf("ping db: %w", pingErr)
+				_ = sqlxDB.Close()
+			}
+		} else {
+			lastErr = fmt.Errorf("connect db: %w", err)
+		}
+
+		if attempt == 30 {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, lastErr
+		case <-time.After(time.Second):
+		}
 	}
-	if err := sqlxDB.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("ping db: %w", err)
-	}
-	return &DB{DB: sqlxDB}, nil
+
+	return nil, lastErr
 }
 
 func Migrate(db *sqlx.DB, dir string) error {
