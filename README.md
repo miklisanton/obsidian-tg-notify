@@ -2,7 +2,7 @@
 
 ## CI/CD and compose deploy
 
-This repo now supports a GHCR-backed Docker Compose deploy flow. CI tests and builds the Go binaries. CD builds one app image, pushes it to GHCR, then the server pulls that image and runs both app and Postgres via Compose. Deploy also runs `seed-default-rules` as a one-off Compose service.
+This repo now supports a GHCR-backed Docker Compose deploy flow. CI tests and builds the Go binaries. CD builds one app image, pushes it to GHCR, then the server pulls that image and runs the app via Compose. Deploy also runs `seed-default-rules` as a one-off Compose service.
 
 ### 1. One-time server bootstrap
 
@@ -30,7 +30,7 @@ Edit those before first deploy.
 
 ### 2. Server config
 
-`shared/config.yaml` should point at your real vault path and Compose Postgres host.
+`shared/config.yaml` should point at your real vault path and remote Postgres host.
 
 `shared/.env` should contain values for:
 
@@ -47,7 +47,6 @@ Edit those before first deploy.
 - `PERSONAL_VAULT_PATH`
 
 Make sure the `obsidian` user can read the vault path.
-If you use the bundled Postgres container, set `POSTGRES_HOST=postgres`.
 
 ### 3. GitHub Actions secrets
 
@@ -90,9 +89,8 @@ The deploy job manages:
 - App migrations still run on startup.
 - Deploy also runs `seed-default-rules` before app update.
 - `.env` is now optional; process env alone also works.
-- App and Postgres both run in Docker Compose.
-- Postgres is bound to `127.0.0.1:${POSTGRES_PORT}` on the host.
-- App reaches Postgres over Compose DNS with `POSTGRES_HOST=postgres`.
+- App runs in Docker Compose.
+- Postgres runs on the server outside Compose.
 
 ### 7. First deploy checklist
 

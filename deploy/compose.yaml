@@ -1,31 +1,9 @@
 services:
-  postgres:
-    image: postgres:17
-    restart: unless-stopped
-    env_file:
-      - ./shared/.env
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   app:
     image: ${APP_IMAGE}
     restart: unless-stopped
     env_file:
       - ./shared/.env
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
       APP_CONFIG: /app/config.yaml
       APP_ENV_FILE: /app/.env
@@ -39,9 +17,6 @@ services:
     restart: "no"
     env_file:
       - ./shared/.env
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
       APP_CONFIG: /app/config.yaml
       APP_ENV_FILE: /app/.env
@@ -50,6 +25,3 @@ services:
       - ./shared/config.yaml:/app/config.yaml:ro
       - ./shared/.env:/app/.env:ro
       - ${PERSONAL_VAULT_HOST_PATH}:${PERSONAL_VAULT_PATH}:ro
-
-volumes:
-  postgres_data:

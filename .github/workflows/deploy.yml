@@ -93,4 +93,4 @@ jobs:
             printf 'export GHCR_USERNAME=%q\n' "$GHCR_USERNAME"
             printf 'export GHCR_TOKEN=%q\n' "$GHCR_TOKEN"
             cat deploy/scripts/deploy-compose.sh
-          } | ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" 'bash -s'
+          } | ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" 'export XDG_RUNTIME_DIR="/run/user/$(id -u)"; export DOCKER_HOST="unix://${XDG_RUNTIME_DIR}/docker.sock"; bash -s'
