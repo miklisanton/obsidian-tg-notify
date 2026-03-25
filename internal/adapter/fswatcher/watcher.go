@@ -42,10 +42,22 @@ func New(vaults []config.VaultConfig, syncer SyncService, debounce time.Duration
 	for _, vault := range vaults {
 		if err := filepath.WalkDir(vault.RootPath, func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil {
+				if os.IsPermission(walkErr) {
+					if entry != nil && entry.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
 				return walkErr
 			}
 			if !entry.IsDir() {
 				return nil
+			}
+			if strings.HasPrefix(entry.Name(), ".") {
+				if path == vault.RootPath {
+					return nil
+				}
+				return filepath.SkipDir
 			}
 			return watcher.raw.Add(path)
 		}); err != nil {

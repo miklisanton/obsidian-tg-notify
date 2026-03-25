@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -37,9 +38,16 @@ func (s *Service) SyncAll(ctx context.Context, vaults []config.VaultConfig) erro
 	for _, vault := range vaults {
 		if err := filepath.Walk(vault.RootPath, func(path string, _ fs.FileInfo, err error) error {
 			if err != nil {
+				if os.IsPermission(err) {
+					return nil
+				}
 				return err
 			}
 			if strings.HasPrefix(filepath.Base(path), ".") {
+				info, statErr := os.Stat(path)
+				if statErr == nil && info.IsDir() && path != vault.RootPath {
+					return filepath.SkipDir
+				}
 				return nil
 			}
 			if filepath.Ext(path) != ".md" {
