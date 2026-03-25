@@ -5,6 +5,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      app_network_name:
+        description: Docker network name
+        required: false
+        default: shared-apps-net
 
 concurrency:
   group: deploy-main
@@ -82,6 +87,7 @@ jobs:
       - name: Deploy compose
         env:
           APP_IMAGE: ${{ steps.image.outputs.sha_tag }}
+          APP_NETWORK_NAME: ${{ github.event.inputs.app_network_name || 'shared-apps-net' }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -90,6 +96,7 @@ jobs:
         run: |
           {
             printf 'export APP_IMAGE=%q\n' "$APP_IMAGE"
+            printf 'export APP_NETWORK_NAME=%q\n' "$APP_NETWORK_NAME"
             printf 'export GHCR_USERNAME=%q\n' "$GHCR_USERNAME"
             printf 'export GHCR_TOKEN=%q\n' "$GHCR_TOKEN"
             cat deploy/scripts/deploy-compose.sh

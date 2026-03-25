@@ -5,6 +5,7 @@ app_root="${HOME}/apps/obsidian-tg-notify"
 shared_dir="${app_root}/shared"
 compose_file="${app_root}/compose.yaml"
 app_image="${APP_IMAGE:-}"
+app_network_name="${APP_NETWORK_NAME:-shared-apps-net}"
 ghcr_username="${GHCR_USERNAME:-}"
 ghcr_token="${GHCR_TOKEN:-}"
 uid="$(id -u)"
@@ -41,7 +42,11 @@ if [ -n "${ghcr_username}" ] && [ -n "${ghcr_token}" ]; then
   printf '%s' "${ghcr_token}" | docker login ghcr.io -u "${ghcr_username}" --password-stdin
 fi
 
+if ! docker network inspect "${app_network_name}" >/dev/null 2>&1; then
+  docker network create "${app_network_name}" >/dev/null
+fi
+
 docker compose --env-file "${shared_dir}/.env" -f "${compose_file}" pull app seed
-APP_IMAGE="${app_image}" docker compose --env-file "${shared_dir}/.env" -f "${compose_file}" run --rm --no-deps seed
-APP_IMAGE="${app_image}" docker compose --env-file "${shared_dir}/.env" -f "${compose_file}" up -d app
-APP_IMAGE="${app_image}" docker compose --env-file "${shared_dir}/.env" -f "${compose_file}" ps
+APP_IMAGE="${app_image}" APP_NETWORK_NAME="${app_network_name}" docker compose --env-file "${shared_dir}/.env" -f "${compose_file}" run --rm --no-deps seed
+APP_IMAGE="${app_image}" APP_NETWORK_NAME="${app_network_name}" docker compose --env-file "${shared_dir}/.env" -f "${compose_file}" up -d app
+APP_IMAGE="${app_image}" APP_NETWORK_NAME="${app_network_name}" docker compose --env-file "${shared_dir}/.env" -f "${compose_file}" ps

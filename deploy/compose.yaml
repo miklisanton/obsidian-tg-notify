@@ -11,6 +11,8 @@ services:
       - ./shared/config.yaml:/app/config.yaml:ro
       - ./shared/.env:/app/.env:ro
       - ${PERSONAL_VAULT_HOST_PATH}:${PERSONAL_VAULT_PATH}:ro
+    networks:
+      - shared
 
   seed:
     image: ${APP_IMAGE}
@@ -25,3 +27,10 @@ services:
       - ./shared/config.yaml:/app/config.yaml:ro
       - ./shared/.env:/app/.env:ro
       - ${PERSONAL_VAULT_HOST_PATH}:${PERSONAL_VAULT_PATH}:ro
+    networks:
+      - shared
+
+networks:
+  shared:
+    external: true
+    name: ${APP_NETWORK_NAME}
