@@ -38,10 +38,15 @@ if [ ! -S "${XDG_RUNTIME_DIR}/docker.sock" ]; then
 fi
 
 if [ -n "${ghcr_username}" ] && [ -n "${ghcr_token}" ]; then
+  printf '== ghcr login ==\n'
   printf '%s' "${ghcr_token}" | docker login ghcr.io -u "${ghcr_username}" --password-stdin
 fi
 
+printf '== pull ==\n'
 docker compose --env-file "${shared_dir}/.env" -f "${compose_file}" pull app seed
+printf '== seed ==\n'
 APP_IMAGE="${app_image}" docker compose --env-file "${shared_dir}/.env" -f "${compose_file}" run --rm --no-deps seed
+printf '== up app ==\n'
 APP_IMAGE="${app_image}" docker compose --env-file "${shared_dir}/.env" -f "${compose_file}" up -d app
+printf '== ps ==\n'
 APP_IMAGE="${app_image}" docker compose --env-file "${shared_dir}/.env" -f "${compose_file}" ps
