@@ -1,6 +1,7 @@
 services:
   app:
     image: ${APP_IMAGE}
+    user: "0:0"
     restart: unless-stopped
     env_file:
       - ./shared/.env
@@ -14,6 +15,7 @@ services:
 
   seed:
     image: ${APP_IMAGE}
+    user: "0:0"
     restart: "no"
     env_file:
       - ./shared/.env
