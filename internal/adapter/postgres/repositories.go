@@ -9,6 +9,7 @@ import (
 
 	"obsidian-notify/internal/adapter/config"
 	"obsidian-notify/internal/app/ports"
+	"obsidian-notify/internal/domain/message"
 	"obsidian-notify/internal/domain/notification"
 	"obsidian-notify/internal/domain/reminder"
 	"obsidian-notify/internal/domain/task"
@@ -19,12 +20,14 @@ var _ ports.TaskRepository = (*TaskRepository)(nil)
 var _ ports.ReminderRepository = (*ReminderRepository)(nil)
 var _ ports.NotificationRepository = (*NotificationRepository)(nil)
 var _ ports.ChatRepository = (*ChatRepository)(nil)
+var _ ports.MessageRepository = (*MessageRepository)(nil)
 
 type VaultRepository struct{ db *DB }
 type TaskRepository struct{ db *DB }
 type ReminderRepository struct{ db *DB }
 type NotificationRepository struct{ db *DB }
 type ChatRepository struct{ db *DB }
+type MessageRepository struct{ db *DB }
 
 func NewVaultRepository(db *DB) *VaultRepository       { return &VaultRepository{db: db} }
 func NewTaskRepository(db *DB) *TaskRepository         { return &TaskRepository{db: db} }
@@ -32,7 +35,8 @@ func NewReminderRepository(db *DB) *ReminderRepository { return &ReminderReposit
 func NewNotificationRepository(db *DB) *NotificationRepository {
 	return &NotificationRepository{db: db}
 }
-func NewChatRepository(db *DB) *ChatRepository { return &ChatRepository{db: db} }
+func NewChatRepository(db *DB) *ChatRepository       { return &ChatRepository{db: db} }
+func NewMessageRepository(db *DB) *MessageRepository { return &MessageRepository{db: db} }
 
 func (r *VaultRepository) EnsureConfigured(ctx context.Context, vaults []config.VaultConfig) error {
 	for _, vault := range vaults {
@@ -80,9 +84,9 @@ func (r *TaskRepository) ReplaceFile(ctx context.Context, document task.Document
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		insert into document_snapshots (vault_id, source_path, source_kind, daily_date, iso_week_year, iso_week_number, weekly_area, has_non_blank_task, synced_at)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, document.VaultID, document.SourcePath, document.SourceKind, nullDate(document.DailyDate), document.ISOWeekYear, document.ISOWeekNumber, document.WeeklyArea, document.HasNonBlankTask, document.SyncedAt); err != nil {
+		insert into document_snapshots (vault_id, source_path, source_kind, daily_date, iso_week_year, iso_week_number, weekly_area, has_non_blank_task, has_daily_summary, synced_at)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, document.VaultID, document.SourcePath, document.SourceKind, nullDate(document.DailyDate), document.ISOWeekYear, document.ISOWeekNumber, document.WeeklyArea, document.HasNonBlankTask, document.HasDailySummary, document.SyncedAt); err != nil {
 		return err
 	}
 	for _, snapshot := range snapshots {
@@ -188,7 +192,7 @@ func (r *TaskRepository) ListDueTasksInRange(ctx context.Context, filter task.Du
 
 func (r *TaskRepository) GetDocument(ctx context.Context, vaultID int64, sourcePath string) (task.DocumentSnapshot, bool, error) {
 	var row documentRow
-	err := r.db.GetContext(ctx, &row, `select vault_id, source_path, source_kind, daily_date, iso_week_year, iso_week_number, weekly_area, has_non_blank_task, synced_at from document_snapshots where vault_id = $1 and source_path = $2`, vaultID, sourcePath)
+	err := r.db.GetContext(ctx, &row, `select vault_id, source_path, source_kind, daily_date, iso_week_year, iso_week_number, weekly_area, has_non_blank_task, has_daily_summary, synced_at from document_snapshots where vault_id = $1 and source_path = $2`, vaultID, sourcePath)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return task.DocumentSnapshot{}, false, nil
@@ -201,7 +205,7 @@ func (r *TaskRepository) GetDocument(ctx context.Context, vaultID int64, sourceP
 func (r *TaskRepository) GetDailyDocument(ctx context.Context, vaultID int64, date task.Date) (task.DocumentSnapshot, bool, error) {
 	var row documentRow
 	err := r.db.GetContext(ctx, &row, `
-		select vault_id, source_path, source_kind, daily_date, iso_week_year, iso_week_number, weekly_area, has_non_blank_task, synced_at
+		select vault_id, source_path, source_kind, daily_date, iso_week_year, iso_week_number, weekly_area, has_non_blank_task, has_daily_summary, synced_at
 		from document_snapshots where vault_id = $1 and daily_date = $2 limit 1
 	`, vaultID, string(date))
 	if err != nil {
@@ -216,7 +220,7 @@ func (r *TaskRepository) GetDailyDocument(ctx context.Context, vaultID int64, da
 func (r *TaskRepository) ListWeeklyDocuments(ctx context.Context, vaultID int64, year int, week int) ([]task.DocumentSnapshot, error) {
 	rows := []documentRow{}
 	err := r.db.SelectContext(ctx, &rows, `
-		select vault_id, source_path, source_kind, daily_date, iso_week_year, iso_week_number, weekly_area, has_non_blank_task, synced_at
+		select vault_id, source_path, source_kind, daily_date, iso_week_year, iso_week_number, weekly_area, has_non_blank_task, has_daily_summary, synced_at
 		from document_snapshots
 		where vault_id = $1 and source_kind = 'weekly' and iso_week_year = $2 and iso_week_number = $3
 	`, vaultID, year, week)
@@ -316,6 +320,33 @@ func (r *ChatRepository) Ensure(ctx context.Context, chatID int64) error {
 	return err
 }
 
+func (r *MessageRepository) SaveIncomingText(ctx context.Context, item message.IncomingText) error {
+	_, err := r.db.ExecContext(ctx, `
+		insert into telegram_messages (chat_id, telegram_message_id, text, sent_at)
+		values ($1, $2, $3, $4)
+		on conflict (chat_id, telegram_message_id) do nothing
+	`, item.ChatID, item.TelegramMessageID, item.Text, item.SentAt)
+	return err
+}
+
+func (r *MessageRepository) ListIncomingTexts(ctx context.Context, chatID int64, from time.Time, to time.Time) ([]message.IncomingText, error) {
+	rows := []messageRow{}
+	err := r.db.SelectContext(ctx, &rows, `
+		select chat_id, telegram_message_id, text, sent_at
+		from telegram_messages
+		where chat_id = $1 and sent_at >= $2 and sent_at < $3
+		order by sent_at asc, telegram_message_id asc
+	`, chatID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]message.IncomingText, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, message.IncomingText{ChatID: row.ChatID, TelegramMessageID: row.TelegramMessageID, Text: row.Text, SentAt: row.SentAt})
+	}
+	return items, nil
+}
+
 type taskRow struct {
 	VaultID       int64          `db:"vault_id"`
 	SourcePath    string         `db:"source_path"`
@@ -344,7 +375,15 @@ type documentRow struct {
 	ISOWeekNumber   sql.NullInt64  `db:"iso_week_number"`
 	WeeklyArea      sql.NullString `db:"weekly_area"`
 	HasNonBlankTask bool           `db:"has_non_blank_task"`
+	HasDailySummary bool           `db:"has_daily_summary"`
 	SyncedAt        time.Time      `db:"synced_at"`
+}
+
+type messageRow struct {
+	ChatID            int64     `db:"chat_id"`
+	TelegramMessageID int       `db:"telegram_message_id"`
+	Text              string    `db:"text"`
+	SentAt            time.Time `db:"sent_at"`
 }
 
 type ruleRow struct {
@@ -369,7 +408,7 @@ func mapTasks(rows []taskRow) []task.Snapshot {
 }
 
 func (r documentRow) toDomain() task.DocumentSnapshot {
-	return task.DocumentSnapshot{VaultID: r.VaultID, SourcePath: r.SourcePath, SourceKind: task.SourceKind(r.SourceKind), DailyDate: nullStringDate(r.DailyDate), ISOWeekYear: nullInt(r.ISOWeekYear), ISOWeekNumber: nullInt(r.ISOWeekNumber), WeeklyArea: nullString(r.WeeklyArea), HasNonBlankTask: r.HasNonBlankTask, SyncedAt: r.SyncedAt}
+	return task.DocumentSnapshot{VaultID: r.VaultID, SourcePath: r.SourcePath, SourceKind: task.SourceKind(r.SourceKind), DailyDate: nullStringDate(r.DailyDate), ISOWeekYear: nullInt(r.ISOWeekYear), ISOWeekNumber: nullInt(r.ISOWeekNumber), WeeklyArea: nullString(r.WeeklyArea), HasNonBlankTask: r.HasNonBlankTask, HasDailySummary: r.HasDailySummary, SyncedAt: r.SyncedAt}
 }
 
 func nullDate(date *task.Date) any {

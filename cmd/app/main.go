@@ -47,16 +47,17 @@ func main() {
 	ruleRepo := pg.NewReminderRepository(db)
 	notificationRepo := pg.NewNotificationRepository(db)
 	chatRepo := pg.NewChatRepository(db)
+	messageRepo := pg.NewMessageRepository(db)
 
 	if err := vaultRepo.EnsureConfigured(ctx, cfg.Vaults); err != nil {
 		log.Fatalf("seed vaults: %v", err)
 	}
 
 	classifier := obsidian.NewClassifier(cfg.App)
-	parser := obsidian.NewParser(classifier)
+	parser := obsidian.NewParserWithConfig(cfg.App)
 	clock := remind.RealClock{}
 	goals := remind.NewGoalsService(taskRepo, classifier)
-	evaluator := remind.NewEvaluator(clock, taskRepo, ruleRepo, notificationRepo, goals)
+	evaluator := remind.NewEvaluator(clock, taskRepo, messageRepo, ruleRepo, notificationRepo, goals)
 	vaultRoots := make(map[int64]string, len(cfg.Vaults))
 	for _, vault := range cfg.Vaults {
 		vaultRoots[vault.ID] = vault.RootPath
@@ -68,7 +69,7 @@ func main() {
 		log.Fatalf("telegram bot: %v", err)
 	}
 
-	telegramService := telegramapp.NewService(chatRepo, ruleRepo, taskRepo, cfg.Telegram.AllowedChatIDs, cfg.App.DefaultVaultID, cfg.App.Timezone)
+	telegramService := telegramapp.NewService(chatRepo, messageRepo, ruleRepo, taskRepo, cfg.Telegram.AllowedChatIDs, cfg.App.DefaultVaultID, cfg.App.Timezone)
 	syncService := syncer.NewService(taskRepo, ruleRepo, notificationRepo, botGateway, parser, cfg.App.TaskMatchThreshold)
 	botRunner := tgbot.NewRunner(botGateway.Bot(), telegramService, syncService, evaluator, botGateway)
 

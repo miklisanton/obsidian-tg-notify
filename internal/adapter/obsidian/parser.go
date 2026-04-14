@@ -16,11 +16,16 @@ import (
 var checkboxPattern = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s+\[( |x|X)\]\s*(.*)$`)
 
 type Parser struct {
-	classifier *Classifier
+	classifier         *Classifier
+	dailySummaryHeader string
 }
 
 func NewParser(classifier *Classifier) *Parser {
-	return &Parser{classifier: classifier}
+	return &Parser{classifier: classifier, dailySummaryHeader: "Today's summary"}
+}
+
+func NewParserWithConfig(app config.AppConfig) *Parser {
+	return &Parser{classifier: NewClassifier(app), dailySummaryHeader: app.DailySummaryHeader}
 }
 
 func (p *Parser) Parse(vault config.VaultConfig, absPath string, now time.Time) (task.ParsedFile, error) {
@@ -58,6 +63,10 @@ func (p *Parser) Parse(vault config.VaultConfig, absPath string, now time.Time) 
 		if strings.HasPrefix(text, "## ") {
 			section = strings.TrimSpace(strings.TrimPrefix(text, "## "))
 			sectionStartLine = line
+			continue
+		}
+		if section == p.dailySummaryHeader && strings.TrimSpace(text) != "" {
+			parsed.Document.HasDailySummary = true
 		}
 		matches := checkboxPattern.FindStringSubmatch(text)
 		if matches == nil {

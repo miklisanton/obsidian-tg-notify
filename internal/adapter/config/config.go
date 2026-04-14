@@ -27,6 +27,7 @@ type AppConfig struct {
 	TaskMatchThreshold float64 `yaml:"task_match_threshold"`
 	DailyNotesDir      string  `yaml:"daily_notes_dir"`
 	WeeklyGoalsDir     string  `yaml:"weekly_goals_dir"`
+	DailySummaryHeader string  `yaml:"daily_summary_header"`
 }
 
 type PostgresConfig struct {
@@ -63,6 +64,14 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("stat %s: %w", envPath, err)
 	}
 
+	info, err := os.Stat(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("stat %s: %w", path, err)
+	}
+	if info.IsDir() {
+		return Config{}, fmt.Errorf("read %s: expected file, got directory", path)
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read %s: %w", path, err)
@@ -91,6 +100,9 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.App.WeeklyGoalsDir == "" {
 		cfg.App.WeeklyGoalsDir = "Weakly goals"
+	}
+	if cfg.App.DailySummaryHeader == "" {
+		cfg.App.DailySummaryHeader = "Today's summary"
 	}
 	if cfg.Postgres.Port == 0 {
 		cfg.Postgres.Port = 5432

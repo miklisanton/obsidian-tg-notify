@@ -60,6 +60,7 @@ type DocumentSnapshot struct {
 	ISOWeekNumber   *int
 	WeeklyArea      *string
 	HasNonBlankTask bool
+	HasDailySummary bool
 	SyncedAt        time.Time
 }
 

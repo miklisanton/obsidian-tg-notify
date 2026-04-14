@@ -5,6 +5,7 @@ app:
   task_match_threshold: ${APP_TASK_MATCH_THRESHOLD}
   daily_notes_dir: "${APP_DAILY_NOTES_DIR}"
   weekly_goals_dir: "${APP_WEEKLY_GOALS_DIR}"
+  daily_summary_header: "${APP_DAILY_SUMMARY_HEADER}"
 
 postgres:
   host: "${POSTGRES_HOST}"

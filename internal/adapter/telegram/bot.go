@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -46,6 +47,12 @@ func NewRunner(bot *bot.Bot, service *telegramapp.Service, syncService *syncer.S
 }
 
 func (r *Runner) Start(ctx context.Context) error {
+	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "", bot.MatchTypeContains, func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		if update.Message == nil {
+			return
+		}
+		_ = r.service.TrackIncomingText(ctx, update.Message.Chat.ID, update.Message.ID, update.Message.Text, time.Unix(int64(update.Message.Date), 0).UTC())
+	})
 	r.bot.RegisterHandler(bot.HandlerTypeMessageText, "/", bot.MatchTypePrefix, func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		if update.Message == nil {
 			return

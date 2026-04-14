@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"obsidian-notify/internal/adapter/config"
+	"obsidian-notify/internal/domain/message"
 	"obsidian-notify/internal/domain/reminder"
 	"obsidian-notify/internal/domain/task"
 )
@@ -17,6 +18,19 @@ func (chatRepoStub) Ensure(context.Context, int64) error { return nil }
 
 type taskRepoStub struct {
 	due []task.Snapshot
+}
+
+type messageRepoStub struct {
+	saved []message.IncomingText
+}
+
+func (m *messageRepoStub) SaveIncomingText(_ context.Context, item message.IncomingText) error {
+	m.saved = append(m.saved, item)
+	return nil
+}
+
+func (messageRepoStub) ListIncomingTexts(context.Context, int64, time.Time, time.Time) ([]message.IncomingText, error) {
+	return nil, nil
 }
 
 func (taskRepoStub) ListFileTasks(context.Context, int64, string) ([]task.Snapshot, error) {
@@ -66,7 +80,7 @@ func (r *ruleRepoStub) Disable(_ context.Context, ruleID string, _ int64) error 
 func TestHelpTextOnStart(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(chatRepoStub{}, &ruleRepoStub{}, taskRepoStub{}, []int64{1}, 1, "UTC+3")
+	service := NewService(chatRepoStub{}, &messageRepoStub{}, &ruleRepoStub{}, taskRepoStub{}, []int64{1}, 1, "UTC+3")
 	text, err := service.Handle(context.Background(), 1, "/start")
 	if err != nil {
 		t.Fatalf("handle: %v", err)
@@ -80,7 +94,7 @@ func TestAddWeeklyReviewRule(t *testing.T) {
 	t.Parallel()
 
 	repo := &ruleRepoStub{}
-	service := NewService(chatRepoStub{}, repo, taskRepoStub{}, []int64{1}, 1, "UTC+3")
+	service := NewService(chatRepoStub{}, &messageRepoStub{}, repo, taskRepoStub{}, []int64{1}, 1, "UTC+3")
 	text, err := service.Handle(context.Background(), 1, "/add weekly-review mon 08:00 fri 10:00")
 	if err != nil {
 		t.Fatalf("handle: %v", err)
@@ -115,7 +129,7 @@ func TestRulesListPretty(t *testing.T) {
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}}}
-	service := NewService(chatRepoStub{}, repo, taskRepoStub{}, []int64{1}, 1, "UTC+3")
+	service := NewService(chatRepoStub{}, &messageRepoStub{}, repo, taskRepoStub{}, []int64{1}, 1, "UTC+3")
 
 	text, err := service.Handle(context.Background(), 1, "/rules")
 	if err != nil {
@@ -135,7 +149,7 @@ func TestRulesListPretty(t *testing.T) {
 func TestChatNotAllowed(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(chatRepoStub{}, &ruleRepoStub{}, taskRepoStub{}, []int64{2}, 1, "UTC+3")
+	service := NewService(chatRepoStub{}, &messageRepoStub{}, &ruleRepoStub{}, taskRepoStub{}, []int64{2}, 1, "UTC+3")
 	text, err := service.Handle(context.Background(), 1, "/rules")
 	if err != nil {
 		t.Fatalf("handle: %v", err)
@@ -148,7 +162,7 @@ func TestChatNotAllowed(t *testing.T) {
 func TestDueCommand(t *testing.T) {
 	t.Parallel()
 
-	service := NewService(chatRepoStub{}, &ruleRepoStub{}, taskRepoStub{due: []task.Snapshot{{Body: "Task A", SourcePath: "Daily/2026-03-23.md", DueDate: ptrDate("2026-03-23")}}}, []int64{1}, 1, "UTC+3")
+	service := NewService(chatRepoStub{}, &messageRepoStub{}, &ruleRepoStub{}, taskRepoStub{due: []task.Snapshot{{Body: "Task A", SourcePath: "Daily/2026-03-23.md", DueDate: ptrDate("2026-03-23")}}}, []int64{1}, 1, "UTC+3")
 	text, err := service.Handle(context.Background(), 1, "/due daily 2026-03-23")
 	if err != nil {
 		t.Fatalf("handle: %v", err)
@@ -179,6 +193,36 @@ func TestParseDueRangeDefaultsToLast14Days(t *testing.T) {
 	toTime := to.Time(loc)
 	if int(toTime.Sub(fromTime).Hours()/24) != 13 {
 		t.Fatalf("expected 14-day inclusive range, got from=%s to=%s", from, to)
+	}
+}
+
+func TestTrackIncomingTextSkipsCommands(t *testing.T) {
+	t.Parallel()
+
+	messages := &messageRepoStub{}
+	service := NewService(chatRepoStub{}, messages, &ruleRepoStub{}, taskRepoStub{}, []int64{1}, 1, "UTC+3")
+	if err := service.TrackIncomingText(context.Background(), 1, 10, "/rules", time.Now()); err != nil {
+		t.Fatalf("track: %v", err)
+	}
+	if len(messages.saved) != 0 {
+		t.Fatalf("expected no saved messages, got %d", len(messages.saved))
+	}
+}
+
+func TestTrackIncomingTextStoresPlainText(t *testing.T) {
+	t.Parallel()
+
+	messages := &messageRepoStub{}
+	service := NewService(chatRepoStub{}, messages, &ruleRepoStub{}, taskRepoStub{}, []int64{1}, 1, "UTC+3")
+	when := time.Date(2026, 4, 14, 19, 35, 0, 0, time.UTC)
+	if err := service.TrackIncomingText(context.Background(), 1, 11, "started feature work", when); err != nil {
+		t.Fatalf("track: %v", err)
+	}
+	if len(messages.saved) != 1 {
+		t.Fatalf("expected 1 saved message, got %d", len(messages.saved))
+	}
+	if messages.saved[0].Text != "started feature work" {
+		t.Fatalf("bad text: %q", messages.saved[0].Text)
 	}
 }
 

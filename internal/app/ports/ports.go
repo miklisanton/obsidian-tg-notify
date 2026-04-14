@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"obsidian-notify/internal/adapter/config"
+	"obsidian-notify/internal/domain/message"
 	"obsidian-notify/internal/domain/notification"
 	"obsidian-notify/internal/domain/reminder"
 	"obsidian-notify/internal/domain/task"
@@ -40,6 +41,11 @@ type NotificationRepository interface {
 
 type ChatRepository interface {
 	Ensure(ctx context.Context, chatID int64) error
+}
+
+type MessageRepository interface {
+	SaveIncomingText(ctx context.Context, item message.IncomingText) error
+	ListIncomingTexts(ctx context.Context, chatID int64, from time.Time, to time.Time) ([]message.IncomingText, error)
 }
 
 type TelegramSender interface {

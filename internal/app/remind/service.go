@@ -10,6 +10,7 @@ import (
 	"obsidian-notify/internal/adapter/config"
 	"obsidian-notify/internal/app/ports"
 	"obsidian-notify/internal/app/syncer"
+	"obsidian-notify/internal/domain/message"
 	"obsidian-notify/internal/domain/notification"
 	"obsidian-notify/internal/domain/reminder"
 	"obsidian-notify/internal/domain/task"
@@ -44,6 +45,7 @@ func NewGoalsService(tasks ports.TaskRepository, classifier WeeklyAreaReader) *G
 type Evaluator struct {
 	clock         Clock
 	tasks         ports.TaskRepository
+	messages      ports.MessageRepository
 	rules         ports.ReminderRepository
 	notifications ports.NotificationRepository
 	goals         *GoalsService
@@ -51,8 +53,8 @@ type Evaluator struct {
 	vaultRootByID map[int64]string
 }
 
-func NewEvaluator(clock Clock, tasks ports.TaskRepository, rules ports.ReminderRepository, notifications ports.NotificationRepository, goals *GoalsService) *Evaluator {
-	return &Evaluator{clock: clock, tasks: tasks, rules: rules, notifications: notifications, goals: goals, vaultRootByID: make(map[int64]string)}
+func NewEvaluator(clock Clock, tasks ports.TaskRepository, messages ports.MessageRepository, rules ports.ReminderRepository, notifications ports.NotificationRepository, goals *GoalsService) *Evaluator {
+	return &Evaluator{clock: clock, tasks: tasks, messages: messages, rules: rules, notifications: notifications, goals: goals, vaultRootByID: make(map[int64]string)}
 }
 
 func (e *Evaluator) SetSender(sender ports.TelegramSender) {
@@ -136,6 +138,34 @@ func (e *Evaluator) evaluateRule(ctx context.Context, now time.Time, rule remind
 			Kind:      rule.Kind,
 			Text:      fmt.Sprintf("Daily goals missing for %s", date),
 		}}, nil
+	case reminder.PromptDailySummaryConfig:
+		date := task.Today(now, loc)
+		doc, exists, err := e.tasks.GetDailyDocument(ctx, rule.VaultID, date)
+		if err != nil {
+			return nil, err
+		}
+		if exists && doc.HasDailySummary {
+			return nil, nil
+		}
+		items, err := e.listMessagesForDay(ctx, rule.ChatID, date, loc)
+		if err != nil {
+			return nil, err
+		}
+		lines := []string{fmt.Sprintf("Today's summary missing for %s", date), "Messages today:"}
+		if len(items) == 0 {
+			lines = append(lines, "- none")
+		} else {
+			for _, item := range items {
+				lines = append(lines, fmt.Sprintf("- %s %s", item.SentAt.In(loc).Format("15:04"), item.Text))
+			}
+		}
+		return []notification.Intent{{
+			DedupeKey: fmt.Sprintf("daily_summary:%s:%s", rule.ID, date),
+			ChatID:    rule.ChatID,
+			RuleID:    rule.ID,
+			Kind:      rule.Kind,
+			Text:      strings.Join(lines, "\n"),
+		}}, nil
 	case reminder.PromptWeeklyGoalsConfig:
 		year, week := now.ISOWeek()
 		missing, err := e.missingWeeklyAreas(ctx, rule.VaultID, year, week)
@@ -175,6 +205,12 @@ func (e *Evaluator) evaluateRule(ctx context.Context, now time.Time, rule remind
 	default:
 		return nil, fmt.Errorf("unsupported config %T", cfg)
 	}
+}
+
+func (e *Evaluator) listMessagesForDay(ctx context.Context, chatID int64, date task.Date, loc *time.Location) ([]message.IncomingText, error) {
+	dayStart := date.Time(loc)
+	dayEnd := dayStart.AddDate(0, 0, 1)
+	return e.messages.ListIncomingTexts(ctx, chatID, dayStart.UTC(), dayEnd.UTC())
 }
 
 func (e *Evaluator) missingWeeklyAreas(ctx context.Context, vaultID int64, year int, week int) ([]string, error) {

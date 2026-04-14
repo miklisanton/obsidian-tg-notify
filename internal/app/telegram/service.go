@@ -11,12 +11,14 @@ import (
 
 	"obsidian-notify/internal/adapter/config"
 	"obsidian-notify/internal/app/ports"
+	"obsidian-notify/internal/domain/message"
 	"obsidian-notify/internal/domain/reminder"
 	"obsidian-notify/internal/domain/task"
 )
 
 type Service struct {
 	chats          ports.ChatRepository
+	messages       ports.MessageRepository
 	rules          ports.ReminderRepository
 	tasks          ports.TaskRepository
 	allowedChats   map[int64]struct{}
@@ -24,12 +26,25 @@ type Service struct {
 	defaultTZ      string
 }
 
-func NewService(chats ports.ChatRepository, rules ports.ReminderRepository, tasks ports.TaskRepository, allowed []int64, defaultVaultID int64, defaultTZ string) *Service {
+func NewService(chats ports.ChatRepository, messages ports.MessageRepository, rules ports.ReminderRepository, tasks ports.TaskRepository, allowed []int64, defaultVaultID int64, defaultTZ string) *Service {
 	allowedChats := make(map[int64]struct{}, len(allowed))
 	for _, chatID := range allowed {
 		allowedChats[chatID] = struct{}{}
 	}
-	return &Service{chats: chats, rules: rules, tasks: tasks, allowedChats: allowedChats, defaultVaultID: defaultVaultID, defaultTZ: defaultTZ}
+	return &Service{chats: chats, messages: messages, rules: rules, tasks: tasks, allowedChats: allowedChats, defaultVaultID: defaultVaultID, defaultTZ: defaultTZ}
+}
+
+func (s *Service) TrackIncomingText(ctx context.Context, chatID int64, messageID int, text string, sentAt time.Time) error {
+	if _, ok := s.allowedChats[chatID]; !ok {
+		return nil
+	}
+	if strings.TrimSpace(text) == "" || strings.HasPrefix(strings.TrimSpace(text), "/") {
+		return nil
+	}
+	if err := s.chats.Ensure(ctx, chatID); err != nil {
+		return err
+	}
+	return s.messages.SaveIncomingText(ctx, message.IncomingText{ChatID: chatID, TelegramMessageID: messageID, Text: text, SentAt: sentAt})
 }
 
 func (s *Service) Handle(ctx context.Context, chatID int64, text string) (string, error) {
@@ -116,6 +131,8 @@ func (s *Service) handleAdd(ctx context.Context, chatID int64, args []string) (s
 		rule, err = s.ruleWithDailyTime(chatID, reminder.RuleKindDueTasks, reminder.DueTasksConfig{Window: task.DueWindowToday}, args[1:])
 	case "daily-prompt":
 		rule, err = s.ruleWithDailyTime(chatID, reminder.RuleKindPromptDailyGoals, reminder.PromptDailyGoalsConfig{}, args[1:])
+	case "daily-summary":
+		rule, err = s.ruleWithDailyTime(chatID, reminder.RuleKindPromptDailySummary, reminder.PromptDailySummaryConfig{}, args[1:])
 	case "weekly-prompt":
 		rule, err = s.ruleWithSlots(chatID, reminder.RuleKindPromptWeeklyGoals, reminder.PromptWeeklyGoalsConfig{}, args[1:])
 	case "weekly-review":
@@ -234,6 +251,8 @@ func describeRule(rule reminder.Rule) string {
 		return "due " + string(cfg.Window)
 	case reminder.PromptDailyGoalsConfig:
 		return "daily prompt"
+	case reminder.PromptDailySummaryConfig:
+		return "daily summary"
 	case reminder.PromptWeeklyGoalsConfig:
 		return "weekly prompt"
 	case reminder.ReviewWeeklyUnfinishedConfig:
@@ -291,6 +310,7 @@ func helpText() string {
 		"- /add new-task",
 		"- /add due-today HH:MM",
 		"- /add daily-prompt HH:MM",
+		"- /add daily-summary HH:MM",
 		"- /add weekly-prompt day HH:MM [day HH:MM...]",
 		"- /add weekly-review day HH:MM [day HH:MM...]",
 		"- /disable RULE_ID",
@@ -306,6 +326,7 @@ func addUsage() string {
 		"- /add new-task",
 		"- /add due-today 09:00",
 		"- /add daily-prompt 08:00",
+		"- /add daily-summary 21:00",
 		"- /add weekly-prompt sun 20:00",
 		"- /add weekly-review mon 08:00 wed 08:00 fri 10:00",
 	}, "\n")

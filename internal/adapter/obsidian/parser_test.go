@@ -51,6 +51,38 @@ func TestParserDailyNote(t *testing.T) {
 	if parsed.Tasks[1].DoneDate == nil || string(*parsed.Tasks[1].DoneDate) != "2026-03-21" {
 		t.Fatalf("bad done date: %+v", parsed.Tasks[1].DoneDate)
 	}
+	if parsed.Document.HasDailySummary {
+		t.Fatal("expected empty daily summary")
+	}
+}
+
+func TestParserReadsConfiguredDailySummarySection(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	dailyDir := filepath.Join(root, "Daily")
+	if err := os.MkdirAll(dailyDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(dailyDir, "2026-03-23.md")
+	content := strings.Join([]string{
+		"## TODO",
+		"- [ ] Ship feature",
+		"",
+		"## Journal",
+		"Good progress today.",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write note: %v", err)
+	}
+
+	parsed, err := NewParserWithConfig(config.AppConfig{DailyNotesDir: "Daily", WeeklyGoalsDir: "Weakly goals", DailySummaryHeader: "Journal"}).Parse(config.VaultConfig{ID: 1, Name: "personal", RootPath: root}, path, time.Now())
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !parsed.Document.HasDailySummary {
+		t.Fatal("expected configured summary section to be detected")
+	}
 }
 
 func TestParserSupportsTasksPluginListPrefixes(t *testing.T) {

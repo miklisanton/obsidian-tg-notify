@@ -15,6 +15,7 @@ const (
 	RuleKindNewTask                RuleKind = "new_task"
 	RuleKindDueTasks               RuleKind = "due_tasks"
 	RuleKindPromptDailyGoals       RuleKind = "prompt_daily_goals"
+	RuleKindPromptDailySummary     RuleKind = "prompt_daily_summary"
 	RuleKindPromptWeeklyGoals      RuleKind = "prompt_weekly_goals"
 	RuleKindReviewWeeklyUnfinished RuleKind = "review_weekly_unfinished"
 )
@@ -87,6 +88,10 @@ type PromptDailyGoalsConfig struct{}
 
 func (PromptDailyGoalsConfig) Kind() RuleKind { return RuleKindPromptDailyGoals }
 
+type PromptDailySummaryConfig struct{}
+
+func (PromptDailySummaryConfig) Kind() RuleKind { return RuleKindPromptDailySummary }
+
 type PromptWeeklyGoalsConfig struct{}
 
 func (PromptWeeklyGoalsConfig) Kind() RuleKind { return RuleKindPromptWeeklyGoals }
@@ -131,6 +136,8 @@ func UnmarshalConfig(kind RuleKind, data []byte) (Config, error) {
 		return cfg, nil
 	case RuleKindPromptDailyGoals:
 		return PromptDailyGoalsConfig{}, nil
+	case RuleKindPromptDailySummary:
+		return PromptDailySummaryConfig{}, nil
 	case RuleKindPromptWeeklyGoals:
 		return PromptWeeklyGoalsConfig{}, nil
 	case RuleKindReviewWeeklyUnfinished:
