@@ -104,7 +104,7 @@ func (e *Evaluator) evaluateRule(ctx context.Context, now time.Time, rule remind
 		_ = cfg
 		return nil, nil
 	case reminder.DueTasksConfig:
-		items, err := e.tasks.ListDueTasks(ctx, task.DueFilter{VaultID: rule.VaultID, Now: now, Loc: loc, Window: cfg.Window})
+		items, err := e.listDueTasks(ctx, rule.VaultID, now, loc, cfg.Window)
 		if err != nil {
 			return nil, err
 		}
@@ -204,6 +204,19 @@ func (e *Evaluator) evaluateRule(ctx context.Context, now time.Time, rule remind
 		}}, nil
 	default:
 		return nil, fmt.Errorf("unsupported config %T", cfg)
+	}
+}
+
+func (e *Evaluator) listDueTasks(ctx context.Context, vaultID int64, now time.Time, loc *time.Location, window task.DueWindow) ([]task.Snapshot, error) {
+	today := task.Today(now, loc)
+	switch window {
+	case task.DueWindowToday:
+		return e.tasks.ListDueTasksInRange(ctx, task.DueRangeFilter{VaultID: vaultID, Scope: task.DueScopeAll, From: today, To: today})
+	case task.DueWindowTomorrow:
+		tomorrow := task.Today(now.AddDate(0, 0, 1), loc)
+		return e.tasks.ListDueTasksInRange(ctx, task.DueRangeFilter{VaultID: vaultID, Scope: task.DueScopeAll, From: tomorrow, To: tomorrow})
+	default:
+		return e.tasks.ListDueTasks(ctx, task.DueFilter{VaultID: vaultID, Now: now, Loc: loc, Window: window})
 	}
 }
 

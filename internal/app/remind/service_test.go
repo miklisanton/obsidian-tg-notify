@@ -13,8 +13,10 @@ import (
 )
 
 type remindTaskRepoStub struct {
-	doc task.DocumentSnapshot
-	ok  bool
+	doc      task.DocumentSnapshot
+	ok       bool
+	due      []task.Snapshot
+	dueRange []task.Snapshot
 }
 
 func (remindTaskRepoStub) ListFileTasks(context.Context, int64, string) ([]task.Snapshot, error) {
@@ -25,12 +27,12 @@ func (remindTaskRepoStub) ReplaceFile(context.Context, task.DocumentSnapshot, []
 	return nil
 }
 
-func (remindTaskRepoStub) ListDueTasks(context.Context, task.DueFilter) ([]task.Snapshot, error) {
-	return nil, nil
+func (r remindTaskRepoStub) ListDueTasks(context.Context, task.DueFilter) ([]task.Snapshot, error) {
+	return r.due, nil
 }
 
-func (remindTaskRepoStub) ListDueTasksInRange(context.Context, task.DueRangeFilter) ([]task.Snapshot, error) {
-	return nil, nil
+func (r remindTaskRepoStub) ListDueTasksInRange(context.Context, task.DueRangeFilter) ([]task.Snapshot, error) {
+	return r.dueRange, nil
 }
 
 func (remindTaskRepoStub) GetDocument(context.Context, int64, string) (task.DocumentSnapshot, bool, error) {
@@ -119,5 +121,26 @@ func TestEvaluateDailySummaryPromptSkipsWhenSummaryExists(t *testing.T) {
 	}
 	if len(intents) != 0 {
 		t.Fatalf("expected no intents, got %d", len(intents))
+	}
+}
+
+func TestEvaluateDueTasksUsesRangeSemanticsForToday(t *testing.T) {
+	t.Parallel()
+
+	loc := time.FixedZone("UTC+3", 3*3600)
+	today := task.MustParseDate("2026-04-14")
+	evaluator := NewEvaluator(RealClock{}, remindTaskRepoStub{dueRange: []task.Snapshot{{Body: "Daily note task", SourcePath: "Daily/2026-04-14.md", DailyDate: &today}}}, remindMessageRepoStub{}, remindRuleRepoStub{}, remindNotificationRepoStub{}, nil)
+	rule := reminder.Rule{ID: "rule-1", ChatID: 1, VaultID: 1, Kind: reminder.RuleKindDueTasks, Timezone: "UTC+3", Config: reminder.DueTasksConfig{Window: task.DueWindowToday}}
+	now := time.Date(2026, 4, 14, 9, 0, 0, 0, loc)
+
+	intents, err := evaluator.evaluateRule(context.Background(), now, rule, loc)
+	if err != nil {
+		t.Fatalf("evaluate rule: %v", err)
+	}
+	if len(intents) != 1 {
+		t.Fatalf("expected 1 intent, got %d", len(intents))
+	}
+	if !strings.Contains(intents[0].Text, "Daily note task") {
+		t.Fatalf("expected due task in %q", intents[0].Text)
 	}
 }
