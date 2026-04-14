@@ -76,10 +76,18 @@ func (s *Service) Handle(ctx context.Context, chatID int64, text string) (string
 		if len(args) != 1 {
 			return "usage: /disable RULE_ID", nil
 		}
-		if err := s.rules.Disable(ctx, args[0], chatID); err != nil {
+		rules, err := s.rules.ListByChat(ctx, chatID)
+		if err != nil {
 			return "", err
 		}
-		return "disabled " + args[0], nil
+		ruleID, err := resolveRuleID(args[0], rules)
+		if err != nil {
+			return "", err
+		}
+		if err := s.rules.Disable(ctx, ruleID, chatID); err != nil {
+			return "", err
+		}
+		return "disabled " + shortestUniqueRuleID(ruleID, rules), nil
 	default:
 		return "unknown command\n\n" + helpText(), nil
 	}
@@ -169,7 +177,7 @@ func (s *Service) listRules(ctx context.Context, chatID int64) (string, error) {
 		if !rule.Enabled {
 			state = "off"
 		}
-		lines = append(lines, fmt.Sprintf("- %s [%s] %s - %s", shortRuleID(rule.ID), state, describeRule(rule), describeSchedule(rule.Schedule)))
+		lines = append(lines, fmt.Sprintf("- %s [%s] %s - %s", shortestUniqueRuleID(rule.ID, rules), state, describeRule(rule), describeSchedule(rule.Schedule)))
 	}
 	lines = append(lines, "disable: /disable RULE_ID")
 	return strings.Join(lines, "\n"), nil
@@ -209,7 +217,7 @@ func (s *Service) insert(ctx context.Context, rule reminder.Rule) (string, error
 	if err := s.rules.Insert(ctx, rule); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("added [%s] %s\n%s", shortRuleID(rule.ID), describeRule(rule), describeSchedule(rule.Schedule)), nil
+	return fmt.Sprintf("added [%s] %s\n%s", shortestUniqueRuleID(rule.ID, []reminder.Rule{rule}), describeRule(rule), describeSchedule(rule.Schedule)), nil
 }
 
 func (s *Service) newRule(chatID int64, kind reminder.RuleKind, timezone string, schedule reminder.Schedule, cfg reminder.Config) reminder.Rule {
@@ -235,11 +243,40 @@ func normalizeCommand(raw string) string {
 	return raw
 }
 
-func shortRuleID(id string) string {
-	if len(id) <= 8 {
-		return id
+func resolveRuleID(raw string, rules []reminder.Rule) (string, error) {
+	matches := make([]string, 0, 1)
+	for _, rule := range rules {
+		if strings.HasPrefix(rule.ID, raw) {
+			matches = append(matches, rule.ID)
+		}
 	}
-	return id[:8]
+	if len(matches) == 0 {
+		return "", fmt.Errorf("rule not found: %s", raw)
+	}
+	if len(matches) > 1 {
+		return "", fmt.Errorf("rule id ambiguous: %s", raw)
+	}
+	return matches[0], nil
+}
+
+func shortestUniqueRuleID(id string, rules []reminder.Rule) string {
+	for size := 1; size <= len(id); size++ {
+		prefix := id[:size]
+		unique := true
+		for _, rule := range rules {
+			if rule.ID == id {
+				continue
+			}
+			if strings.HasPrefix(rule.ID, prefix) {
+				unique = false
+				break
+			}
+		}
+		if unique {
+			return prefix
+		}
+	}
+	return id
 }
 
 func describeRule(rule reminder.Rule) string {

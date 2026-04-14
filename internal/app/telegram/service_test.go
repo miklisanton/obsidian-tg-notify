@@ -138,11 +138,32 @@ func TestRulesListPretty(t *testing.T) {
 	if text == "" || text[:6] != "rules:" {
 		t.Fatalf("bad list text: %q", text)
 	}
-	if want := "12345678"; !strings.Contains(text, want) {
-		t.Fatalf("expected short id %q in %q", want, text)
+	if want := "- 1 [on]"; !strings.Contains(text, want) {
+		t.Fatalf("expected shortest unique id %q in %q", want, text)
 	}
 	if want := "daily prompt"; !strings.Contains(text, want) {
 		t.Fatalf("expected description %q in %q", want, text)
+	}
+}
+
+func TestRulesListUsesShortestUniquePrefix(t *testing.T) {
+	t.Parallel()
+
+	repo := &ruleRepoStub{rules: []reminder.Rule{
+		{ID: "12345678-abcd", ChatID: 1, VaultID: 1, Kind: reminder.RuleKindPromptDailyGoals, Timezone: "UTC+3", Schedule: reminder.Schedule{Slots: []reminder.ScheduleSlot{{Time: reminder.LocalTime{Hour: 8, Minute: 0}}}}, Config: reminder.PromptDailyGoalsConfig{}, Enabled: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{ID: "1234ffff-abcd", ChatID: 1, VaultID: 1, Kind: reminder.RuleKindPromptDailySummary, Timezone: "UTC+3", Schedule: reminder.Schedule{Slots: []reminder.ScheduleSlot{{Time: reminder.LocalTime{Hour: 21, Minute: 0}}}}, Config: reminder.PromptDailySummaryConfig{}, Enabled: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+	}}
+	service := NewService(chatRepoStub{}, &messageRepoStub{}, repo, taskRepoStub{}, []int64{1}, 1, "UTC+3")
+
+	text, err := service.Handle(context.Background(), 1, "/rules")
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if !strings.Contains(text, "12345") {
+		t.Fatalf("expected shortest unique prefix in %q", text)
+	}
+	if strings.Contains(text, "1234 ") || strings.Contains(text, "1234[") {
+		t.Fatalf("expected longer than ambiguous prefix in %q", text)
 	}
 }
 
@@ -223,6 +244,50 @@ func TestTrackIncomingTextStoresPlainText(t *testing.T) {
 	}
 	if messages.saved[0].Text != "started feature work" {
 		t.Fatalf("bad text: %q", messages.saved[0].Text)
+	}
+}
+
+func TestDisableResolvesPrefix(t *testing.T) {
+	t.Parallel()
+
+	repo := &ruleRepoStub{rules: []reminder.Rule{{
+		ID:        "12345678-abcd",
+		ChatID:    1,
+		VaultID:   1,
+		Kind:      reminder.RuleKindPromptDailyGoals,
+		Timezone:  "UTC+3",
+		Schedule:  reminder.Schedule{Slots: []reminder.ScheduleSlot{{Time: reminder.LocalTime{Hour: 8, Minute: 0}}}},
+		Config:    reminder.PromptDailyGoalsConfig{},
+		Enabled:   true,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}}}
+	service := NewService(chatRepoStub{}, &messageRepoStub{}, repo, taskRepoStub{}, []int64{1}, 1, "UTC+3")
+
+	text, err := service.Handle(context.Background(), 1, "/disable 1234")
+	if err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+	if len(repo.disabled) != 1 || repo.disabled[0] != "12345678-abcd" {
+		t.Fatalf("bad disabled ids: %+v", repo.disabled)
+	}
+	if text != "disabled 1" {
+		t.Fatalf("bad response: %q", text)
+	}
+}
+
+func TestDisableRejectsAmbiguousPrefix(t *testing.T) {
+	t.Parallel()
+
+	repo := &ruleRepoStub{rules: []reminder.Rule{
+		{ID: "12345678-abcd", ChatID: 1, VaultID: 1, Kind: reminder.RuleKindPromptDailyGoals, Timezone: "UTC+3", Schedule: reminder.Schedule{Slots: []reminder.ScheduleSlot{{Time: reminder.LocalTime{Hour: 8, Minute: 0}}}}, Config: reminder.PromptDailyGoalsConfig{}, Enabled: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{ID: "1234ffff-abcd", ChatID: 1, VaultID: 1, Kind: reminder.RuleKindPromptDailySummary, Timezone: "UTC+3", Schedule: reminder.Schedule{Slots: []reminder.ScheduleSlot{{Time: reminder.LocalTime{Hour: 21, Minute: 0}}}}, Config: reminder.PromptDailySummaryConfig{}, Enabled: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+	}}
+	service := NewService(chatRepoStub{}, &messageRepoStub{}, repo, taskRepoStub{}, []int64{1}, 1, "UTC+3")
+
+	_, err := service.Handle(context.Background(), 1, "/disable 1234")
+	if err == nil || err.Error() != "rule id ambiguous: 1234" {
+		t.Fatalf("bad error: %v", err)
 	}
 }
 
