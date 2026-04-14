@@ -293,7 +293,7 @@ func (r *ReminderRepository) Insert(ctx context.Context, rule reminder.Rule) err
 }
 
 func (r *ReminderRepository) Disable(ctx context.Context, ruleID string, chatID int64) error {
-	_, err := r.db.ExecContext(ctx, `update reminder_rules set enabled = false, updated_at = now() where id = $1 and chat_id = $2`, ruleID, chatID)
+	_, err := r.db.ExecContext(ctx, `delete from reminder_rules where id = $1 and chat_id = $2`, ruleID, chatID)
 	return err
 }
 
